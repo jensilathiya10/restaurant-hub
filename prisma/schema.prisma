@@ -1,0 +1,489 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  OWNER
+  MANAGER
+  CASHIER
+  WAITER
+  CHEF
+  CUSTOMER
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  APPLE_PAY
+  GOOGLE_PAY
+}
+
+enum TableStatus {
+  FREE
+  OCCUPIED
+  RESERVED
+  CLEANING
+}
+
+enum ReservationStatus {
+  BOOKED
+  SEATED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+model Restaurant {
+  id           String   @id
+  name         String
+  slug         String   @unique
+  address      String?
+  currency     String   @default("EUR")
+  taxRate      Float    @default(0.1)
+  openingHours String?
+  createdAt    DateTime @default(now())
+
+  users          User[]
+  tables         RestaurantTable[]
+  employees      Employee[]
+  customers      Customer[]
+  reservations   Reservation[]
+  orders         Order[]
+  menuCategories MenuCategory[]
+  menuItems      MenuItem[]
+  inventory      InventoryItem[]
+  suppliers      Supplier[]
+  purchases      Purchase[]
+  discounts      Discount[]
+  coupons        Coupon[]
+  schedules      Schedule[]
+  attendance     Attendance[]
+  recipeItems    RecipeItem[]
+  inventoryLogs  InventoryLog[]
+  payments       Payment[]
+  purchaseLines  PurchaseLine[]
+  notifications  Notification[]
+  reviews        Review[]
+
+  @@map("restaurants")
+}
+
+model User {
+  id           String   @id
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(CUSTOMER)
+  restaurantId String?
+  createdAt    DateTime @default(now())
+
+  restaurant Restaurant? @relation(fields: [restaurantId], references: [id])
+  employee   Employee?
+  customer   Customer?
+
+  @@index([restaurantId])
+  @@map("users")
+}
+
+model Employee {
+  id           String   @id
+  userId       String   @unique
+  restaurantId String
+  position     String
+  hourlyRate   Float    @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  user       User         @relation(fields: [userId], references: [id])
+  restaurant Restaurant   @relation(fields: [restaurantId], references: [id])
+  schedules  Schedule[]
+  attendance Attendance[]
+  orders     Order[]      @relation("EmployeeOrders")
+
+  @@index([restaurantId])
+  @@map("employees")
+}
+
+model Schedule {
+  id           String   @id
+  employeeId   String
+  restaurantId String
+  dayOfWeek    Int
+  startTime    String
+  endTime      String
+  createdAt    DateTime @default(now())
+
+  employee   Employee   @relation(fields: [employeeId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("schedules")
+}
+
+// restaurantId is denormalized from Employee.restaurantId — kept off the
+// original SQLite table too, added here so this row can be tenant-scoped
+// without a join once every other model got the same treatment.
+model Attendance {
+  id           String    @id
+  employeeId   String
+  restaurantId String
+  clockIn      DateTime  @default(now())
+  clockOut     DateTime?
+
+  employee   Employee   @relation(fields: [employeeId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("attendance")
+}
+
+model Customer {
+  id            String   @id
+  userId        String?  @unique
+  restaurantId  String
+  name          String
+  phone         String?
+  email         String?
+  favoriteFood  String?
+  allergy       String?
+  birthday      String?
+  loyaltyPoints Int      @default(0)
+  visits        Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id])
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
+  reservations Reservation[]
+  orders       Order[]
+  reviews      Review[]
+
+  @@index([restaurantId])
+  @@map("customers")
+}
+
+model RestaurantTable {
+  id           String      @id
+  restaurantId String
+  number       Int
+  seats        Int         @default(4)
+  status       TableStatus @default(FREE)
+  posX         Int         @default(0)
+  posY         Int         @default(0)
+
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
+  orders       Order[]
+  reservations Reservation[]
+
+  @@index([restaurantId])
+  @@map("tables_")
+}
+
+model Reservation {
+  id           String            @id
+  restaurantId String
+  customerId   String?
+  tableId      String?
+  guestName    String
+  guestPhone   String?
+  partySize    Int               @default(2)
+  time         DateTime
+  status       ReservationStatus @default(BOOKED)
+  createdAt    DateTime          @default(now())
+
+  restaurant Restaurant       @relation(fields: [restaurantId], references: [id])
+  customer   Customer?        @relation(fields: [customerId], references: [id])
+  table      RestaurantTable? @relation(fields: [tableId], references: [id])
+
+  @@index([restaurantId])
+  @@map("reservations")
+}
+
+model MenuCategory {
+  id           String @id
+  restaurantId String
+  name         String
+  sortOrder    Int    @default(0)
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  items      MenuItem[]
+
+  @@index([restaurantId])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id           String   @id
+  restaurantId String
+  categoryId   String
+  name         String
+  description  String?
+  price        Float
+  imageUrl     String?
+  available    Boolean  @default(true)
+  prepMinutes  Int      @default(10)
+  createdAt    DateTime @default(now())
+
+  dietaryTags String  @default("")
+  spiceLevel  Int     @default(0)
+  calories    Int?
+  proteinG    Int?
+  popularity  Int     @default(50)
+  rating      Float   @default(4.5)
+  isChefPick  Boolean @default(false)
+  isTrending  Boolean @default(false)
+
+  restaurant Restaurant     @relation(fields: [restaurantId], references: [id])
+  category   MenuCategory   @relation(fields: [categoryId], references: [id])
+  recipe     RecipeItem[]
+  orderItems OrderItem[]
+  reviews    Review[]
+
+  @@index([restaurantId])
+  @@map("menu_items")
+}
+
+model InventoryItem {
+  id           String    @id
+  restaurantId String
+  name         String
+  unit         String    @default("kg")
+  quantity     Float     @default(0)
+  lowStockAt   Float     @default(5)
+  costPerUnit  Float     @default(0)
+  expiryDate   DateTime?
+
+  restaurant    Restaurant     @relation(fields: [restaurantId], references: [id])
+  logs          InventoryLog[]
+  recipeItems   RecipeItem[]
+  purchaseLines PurchaseLine[]
+
+  @@index([restaurantId])
+  @@map("inventory_items")
+}
+
+// restaurantId denormalized from MenuItem.restaurantId (same tenant on both
+// sides of the recipe link) — see Attendance for why this column exists here.
+model RecipeItem {
+  id              String @id
+  menuItemId      String
+  inventoryItemId String
+  restaurantId    String
+  quantity        Float
+
+  menuItem      MenuItem      @relation(fields: [menuItemId], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("recipe_items")
+}
+
+// restaurantId denormalized from InventoryItem.restaurantId.
+model InventoryLog {
+  id              String   @id
+  inventoryItemId String
+  restaurantId    String
+  change          Float
+  reason          String
+  createdAt       DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("inventory_logs")
+}
+
+model Supplier {
+  id           String  @id
+  restaurantId String
+  name         String
+  phone        String?
+  email        String?
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  purchases  Purchase[]
+
+  @@index([restaurantId])
+  @@map("suppliers")
+}
+
+model Purchase {
+  id           String   @id
+  restaurantId String
+  supplierId   String
+  totalCost    Float
+  createdAt    DateTime @default(now())
+
+  restaurant Restaurant     @relation(fields: [restaurantId], references: [id])
+  supplier   Supplier       @relation(fields: [supplierId], references: [id])
+  lines      PurchaseLine[]
+
+  @@index([restaurantId])
+  @@map("purchases")
+}
+
+// restaurantId denormalized from Purchase.restaurantId.
+model PurchaseLine {
+  id              String @id
+  purchaseId      String
+  inventoryItemId String
+  restaurantId    String
+  quantity        Float
+  unitCost        Float
+
+  purchase      Purchase      @relation(fields: [purchaseId], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("purchase_lines")
+}
+
+model Order {
+  id            String         @id
+  restaurantId  String
+  tableId       String?
+  customerId    String?
+  employeeId    String?
+  type          OrderType      @default(DINE_IN)
+  status        OrderStatus    @default(PENDING)
+  paymentStatus PaymentStatus  @default(UNPAID)
+  paymentMethod PaymentMethod?
+  subtotal      Float          @default(0)
+  discountTotal Float          @default(0)
+  taxTotal      Float          @default(0)
+  tip           Float          @default(0)
+  total         Float          @default(0)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  restaurant Restaurant       @relation(fields: [restaurantId], references: [id])
+  table      RestaurantTable? @relation(fields: [tableId], references: [id])
+  customer   Customer?        @relation(fields: [customerId], references: [id])
+  employee   Employee?        @relation("EmployeeOrders", fields: [employeeId], references: [id])
+  items      OrderItem[]
+  payments   Payment[]
+
+  @@index([restaurantId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String      @id
+  orderId    String
+  menuItemId String
+  quantity   Int         @default(1)
+  price      Float
+  status     OrderStatus @default(PENDING)
+  notes      String?
+
+  order    Order    @relation(fields: [orderId], references: [id])
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// restaurantId denormalized from Order.restaurantId.
+model Payment {
+  id           String        @id
+  orderId      String
+  restaurantId String
+  amount       Float
+  method       PaymentMethod
+  createdAt    DateTime      @default(now())
+
+  order      Order      @relation(fields: [orderId], references: [id])
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("payments")
+}
+
+model Discount {
+  id           String @id
+  restaurantId String
+  name         String
+  percent      Float
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("discounts")
+}
+
+model Coupon {
+  id           String    @id
+  restaurantId String
+  code         String
+  percentOff   Float
+  active       Boolean   @default(true)
+  expiresAt    DateTime?
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@unique([restaurantId, code])
+  @@map("coupons")
+}
+
+model Notification {
+  id           String   @id
+  restaurantId String
+  type         String
+  message      String
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId])
+  @@map("notifications")
+}
+
+model Review {
+  id            String   @id
+  restaurantId  String
+  customerId    String?
+  menuItemId    String?
+  foodRating    Int      @default(5)
+  serviceRating Int      @default(5)
+  waitRating    Int      @default(5)
+  cleanRating   Int      @default(5)
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id])
+  customer   Customer?  @relation(fields: [customerId], references: [id])
+  menuItem   MenuItem?  @relation(fields: [menuItemId], references: [id])
+
+  @@index([restaurantId])
+  @@map("reviews")
+}
